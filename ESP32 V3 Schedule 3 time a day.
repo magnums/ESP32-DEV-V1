@@ -273,9 +273,23 @@ void handleSetSchedule() {
   prefs.putBytes("data", &schedules, sizeof(schedules));
   prefs.end();
 
-  server.sendHeader("Location", "/schedule", true);
-  server.send(302, "text/plain", "");
+  // ✅ ใช้ HTML พร้อม meta charset
+  server.send(200, "text/html", R"rawliteral(
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <script>
+        alert("✅ บันทึกเวลาเรียบร้อยแล้ว");
+        window.location.href = "/schedule";
+      </script>
+    </head>
+    <body></body>
+    </html>
+  )rawliteral");
 }
+
+
 
 // ========== เช็คเวลาและควบคุมรีเลย์ ==========
 void checkSchedule() {
