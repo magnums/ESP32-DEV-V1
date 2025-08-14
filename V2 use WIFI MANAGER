@@ -1,0 +1,286 @@
+#include <WiFi.h>
+#include <WiFiManager.h> // เพิ่ม
+#include "time.h"
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <WebServer.h>
+#include <Preferences.h>
+
+// ====================== OLED config ======================
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1
+#define OLED_ADDR     0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ====================== Web Server ======================
+WebServer server(80);
+const char* loginUser = "admin";
+const char* loginPass = "1234";
+
+// ====================== Preferences ======================
+Preferences prefs;
+
+// ====================== Relay config ======================
+#define RELAY_PIN 5
+bool relayState = false;
+
+// ====================== NTP ======================
+const char* ntp1 = "pool.ntp.org";
+const char* ntp2 = "time.nist.gov";
+const char* timeZone = "GMT-7";
+
+// ====================== ฟังก์ชัน ======================
+void handleRoot() {
+  if (!server.authenticate(loginUser, loginPass)) return server.requestAuthentication();
+
+  String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Relay Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background-color: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 16px 32px;
+      margin: 10px;
+      font-size: 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      color: white;
+      transition: background 0.3s;
+    }
+
+    .btn-on { background-color: #28a745; }
+    .btn-on:hover { background-color: #218838; }
+
+    .btn-off { background-color: #dc3545; }
+    .btn-off:hover { background-color: #c82333; }
+
+    .btn-action-reboot {
+      background-color: #ffc107; /* สีเหลือง */
+      color: black;
+    }
+    .btn-action-reboot:hover {
+      background-color: #e0a800;
+    }
+
+    .btn-action-resetwifi {
+      background-color: #007bff; /* 🔵 สีน้ำเงิน */
+      color: white;
+    }
+    .btn-action-resetwifi:hover {
+      background-color: #0069d9;
+    }
+
+    .status {
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Relay Control</h2>
+  <div class="status">Relay is now: <b>%STATE%</b></div>
+  <div>
+    <a href="/on" class="btn btn-on">Turn ON</a>
+    <a href="/off" class="btn btn-off">Turn OFF</a>
+  </div>
+  <hr style="width: 80%;">
+  <div>
+  <a href="/reboot" class="btn btn-action-reboot" onclick="return confirmAction('reboot')">Reboot</a>
+  <a href="/resetwifi" class="btn btn-action-resetwifi" onclick="return confirmAction('resetwifi')">Reset WiFi</a>
+</div>
+  <script>
+  function confirmAction(action) {
+    if (action === 'reboot') {
+      return confirm("คุณแน่ใจหรือไม่ว่าต้องการ Reboot อุปกรณ์?");
+    } else if (action === 'resetwifi') {
+      return confirm("คุณแน่ใจหรือไม่ว่าต้องการล้างค่า WiFi และเข้าโหมดตั้งค่า?");
+    }
+    return false;
+  }
+</script>
+
+</body>
+</html>
+)rawliteral";
+
+
+  html.replace("%STATE%", relayState ? "ON" : "OFF");
+  server.send(200, "text/html", html);
+}
+
+void handleOn() {
+  if (!server.authenticate(loginUser, loginPass)) return server.requestAuthentication();
+  relayState = true;
+  digitalWrite(RELAY_PIN, HIGH);
+  prefs.begin("relay", false);
+  prefs.putBool("state", true);
+  prefs.end();
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
+}
+
+void handleOff() {
+  if (!server.authenticate(loginUser, loginPass)) return server.requestAuthentication();
+  relayState = false;
+  digitalWrite(RELAY_PIN, LOW);
+  prefs.begin("relay", false);
+  prefs.putBool("state", false);
+  prefs.end();
+  server.sendHeader("Location", "/", true);
+  server.send(302, "text/plain", "");
+}
+
+void handleReboot() {
+  server.send(200, "text/html", "<meta http-equiv='refresh' content='3;url=/'><h2>Rebooting...</h2>");
+  delay(1000);
+  ESP.restart();
+}
+
+void handleResetWiFi() {
+  WiFi.disconnect(true, true);
+  server.send(200, "text/html", "<meta http-equiv='refresh' content='5;url=/'><h2>WiFi settings erased.<br>Rebooting...</h2>");
+  delay(3000);
+  ESP.restart();
+}
+
+// ====================== SETUP ======================
+int displayMode = 0;
+unsigned long lastSwitchTitle = 0;
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+
+  pinMode(RELAY_PIN, OUTPUT);
+
+  prefs.begin("relay", true);
+  relayState = prefs.getBool("state", false);
+  prefs.end();
+  digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+
+  // OLED Init
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    Serial.println("❌ OLED not found");
+    while (1);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Starting WiFi...");
+  display.display();
+
+ // ---------- WiFiManager ----------
+  WiFiManager wm;
+  wm.setConfigPortalTimeout(180); // ตั้ง Timeout เป็น 3 นาที
+  wm.setAPCallback([](WiFiManager* wm) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("AP Mode");
+    display.println("SSID: ESP32-SETUP");
+    display.println("Waiting....");
+    display.display();
+  });
+
+  if (!wm.autoConnect("ESP32-SETUP")) {
+    Serial.println("❌ Failed to connect.");
+    ESP.restart();
+  }
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("WiFi connected");
+  display.setCursor(0, 10);
+  display.print("IP: ");
+  display.println(WiFi.localIP());
+  display.display();
+  delay(1000);
+
+  // Time
+  configTzTime(timeZone, ntp1, ntp2);
+  struct tm timeinfo;
+  while (!getLocalTime(&timeinfo)) {
+    Serial.println("Waiting for NTP...");
+    delay(1000);
+  }
+
+  // Web Server
+  server.on("/", handleRoot);
+  server.on("/on", handleOn);
+  server.on("/off", handleOff);
+  server.on("/reboot", handleReboot);
+  server.on("/resetwifi", handleResetWiFi);
+  server.begin();
+  Serial.println("🌐 Web server started");
+}
+
+// ====================== LOOP ======================
+void loop() {
+  server.handleClient();
+
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
+
+  if (millis() - lastSwitchTitle >= 5000) {
+    displayMode = (displayMode + 1) % 3;
+    lastSwitchTitle = millis();
+  }
+
+  char timeStr[16], dateStr[16];
+  strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+  strftime(dateStr, sizeof(dateStr), "%d/%m/%Y", &timeinfo);
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  String title = "";
+  if (displayMode == 0) {
+    title = "Date & Time: Thailand";
+  } else if (displayMode == 1) {
+    title = "IP: " + WiFi.localIP().toString();
+  } else {
+    title = "Relay Status: " + String(relayState ? "ON" : "OFF");
+  }
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 0);
+  display.println(title);
+
+  display.setTextSize(2);
+  String timeStrS = String(timeStr);
+  display.getTextBounds(timeStrS, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 20);
+  display.println(timeStrS);
+
+  String dateStrS = String(dateStr);
+  display.getTextBounds(dateStrS, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor((SCREEN_WIDTH - w) / 2, 44);
+  display.println(dateStrS);
+
+  display.display();
+  delay(1000);
+}
