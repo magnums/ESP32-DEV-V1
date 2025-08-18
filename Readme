@@ -1,0 +1,51 @@
+🔌 ESP32 Web Relay Scheduler
+พร้อมหน้าจอ OLED และ Web Control Interface
+✅ ฟีเจอร์ที่สำคัญ
+ควบคุม Relay ผ่าน Web Interface (WiFi)
+ตั้งเวลาเปิด/ปิด Relay ได้ 3 รอบต่อวัน
+บันทึกการตั้งค่าใน Flash (Preferences)
+แสดงผลวัน/เวลา และสถานะบนจอ OLED
+กดปุ่ม Reset WiFi เพื่อเข้าโหมดตั้งค่าใหม่
+⚙️ อุปกรณ์ที่ใช้
+ESP32 DevKit v1
+จอ OLED 128x64 (I2C Address: 0x3C)
+Relay Module 1 ช่อง
+Push Button สำหรับ Reset WiFi
+แหล่งจ่ายไฟ 5V (แนะนำ 5V 2A)
+🧠 Library ที่ใช้ในโปรเจกต์
+WiFi.h
+WiFiManager.h
+WebServer.h
+Preferences.h
+time.h
+Wire.h
+Adafruit_SSD1306.h
+Adafruit_GFX.h
+🌐 Web Interface
+หน้า / → ควบคุม Relay (เปิด/ปิด)
+หน้า /schedule → ตั้งเวลาเปิด/ปิด
+หน้า /resetwifi → ล้าง WiFi แล้ว Reboot
+หน้า /reboot → รีบูตอุปกรณ์
+ป้องกันด้วย Username/Password
+Default: user: admin, pass: 1234
+
+🕒 ตั้งเวลาเปิด/ปิด Relay
+ตั้งได้สูงสุด 3 ช่วงเวลา
+เวลาเปิดและปิดแต่ละรอบอิสระจากกัน
+รองรับ Timezone GMT+7 (เวลาประเทศไทย)
+ตั้งค่าผ่าน Web และบันทึกใน Flash
+🖥️ หน้าจอ OLED แสดงผล
+วันที่และเวลาแบบ Real-Time
+สถานะ IP Address
+สถานะ Relay (ON/OFF)
+เปลี่ยนข้อมูลบนหน้าจอทุก 5 วินาที
+🧹 Reset WiFi ด้วยปุ่ม
+ใช้ขา GPIO 4 (กำหนดเป็น RESET_BUTTON_PIN)
+กดค้าง 5 วินาที จะเข้าสู่โหมด WiFiManager
+ใช้ WiFiManager สร้าง AP ชื่อ ESP32-SETUP
+หลังเชื่อมต่อ จะตั้งค่า WiFi ใหม่ผ่านหน้าเว็บ
+📁 โฟลเดอร์ / โครงสร้างโค้ด
+ESP32_Relay_Scheduler/
+├── main.ino              ← โค้ดหลัก
+├── data/                 ← (ถ้ามี) สำหรับ SPIFFS
+└── lib/                  ← ไลบรารีเพิ่มเติม
